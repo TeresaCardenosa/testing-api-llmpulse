@@ -34,10 +34,12 @@ def main() -> int:
         except (ValueError, UnicodeDecodeError):
             print("  AVISO: el manifiesto no es legible; se omite su contexto.")
 
-    stats = schema.collect(details)
+    stats, containers = schema.collect(details)
     config.DOCS.mkdir(parents=True, exist_ok=True)
     target = config.DOCS / "ESQUEMA.md"
-    target.write_text(schema.render(stats, len(details), context), encoding="utf-8")
+    target.write_text(
+        schema.render(stats, containers, len(details), context), encoding="utf-8"
+    )
 
     print(f"Respuestas inspeccionadas: {len(details)}")
     print(f"Modelos distintos: {len(models)}")

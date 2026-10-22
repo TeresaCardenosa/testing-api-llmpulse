@@ -43,18 +43,44 @@ def prompts_in_collection(prompts: list[dict], collection_id: str | None) -> lis
     return selected
 
 
-def choose_prompts(summaries: list[dict], num_prompts: int) -> dict[str, list[dict]]:
+def choose_prompts(
+    summaries: list[dict], num_prompts: int | None
+) -> dict[str, list[dict]]:
     """Agrupar el listado por prompt y quedarse con los N mejor cubiertos.
 
     Se prefieren los prompts con mas respuestas: dan la comparacion entre
-    modelos mas rica, que es el objetivo del experimento.
+    modelos mas rica, que es el objetivo de la prueba exploratoria.
+
+    `num_prompts=None` devuelve TODOS los prompts, sin recortar. Es el modo que
+    necesita el NAR definitivo, donde se analizan todos los prompts del tag y
+    no una muestra. Se activa con LLMPULSE_NUM_PROMPTS=all en .env.
     """
     grouped: dict[str, list[dict]] = {}
     for item in summaries:
         key = str(item.get("prompt_id"))
         grouped.setdefault(key, []).append(item)
     ranked = sorted(grouped.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    if num_prompts is None:
+        return dict(ranked)
     return dict(ranked[:num_prompts])
+
+
+def parse_num_prompts(raw: str | None) -> int | None:
+    """Interpretar LLMPULSE_NUM_PROMPTS; 'all' o 0 significan 'todos'."""
+    value = (raw or "").strip().lower()
+    if not value:
+        return 4
+    if value in {"all", "todos", "0"}:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise LLMPulseError(
+            "LLMPULSE_NUM_PROMPTS debe ser un numero entero o 'all'."
+        ) from None
+    if parsed < 0:
+        raise LLMPulseError("LLMPULSE_NUM_PROMPTS no puede ser negativo.")
+    return parsed
 
 
 def fetch_details(

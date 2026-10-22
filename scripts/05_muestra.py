@@ -20,6 +20,7 @@ from llmpulse.sampling import (
     SUMMARY_SCAN_LIMIT,
     choose_prompts,
     fetch_details,
+    parse_num_prompts,
     write_flat_csv,
     write_manifest,
 )
@@ -41,13 +42,13 @@ def main() -> int:
     date_from = config.require("LLMPULSE_FROM", "Pon la fecha inicial en .env (AAAA-MM-DD).")
     date_to = config.require("LLMPULSE_TO", "Pon la fecha final en .env (AAAA-MM-DD).")
     collection_id = (os.environ.get("LLMPULSE_COLLECTION_ID") or "").strip() or None
-    num_prompts = int(os.environ.get("LLMPULSE_NUM_PROMPTS", "4") or 4)
     max_answers = int(os.environ.get("LLMPULSE_MAX_ANSWERS", "40") or 40)
 
     heading("Paso 5 - Descarga de la muestra")
     try:
         if _valid_date(date_from, "LLMPULSE_FROM") > _valid_date(date_to, "LLMPULSE_TO"):
             raise LLMPulseError("LLMPULSE_FROM debe ser anterior o igual a LLMPULSE_TO.")
+        num_prompts = parse_num_prompts(os.environ.get("LLMPULSE_NUM_PROMPTS"))
 
         client = LLMPulseClient(config.api_key())
         project = client.get(f"/dimensions/projects/{project_id}")
@@ -55,10 +56,8 @@ def main() -> int:
         prompts = client.list_all("/dimensions/prompts", project_id=project_id)
 
         print(f"Proyecto {project_id} | tag {collection_id or 'todos'} | {date_from} a {date_to}")
-        print(
-            f"Objetivo: {num_prompts} prompts distintos"
-            f" (tope de seguridad: {max_answers} respuestas)"
-        )
+        objetivo = "TODOS los prompts" if num_prompts is None else f"{num_prompts} prompts distintos"
+        print(f"Objetivo: {objetivo} (tope de seguridad: {max_answers} respuestas)")
 
         # Se pide el listado y se agrupa por prompt en local, en vez de filtrar por
         # prompt_id en la API: asi no dependemos de un parametro no documentado.
@@ -73,8 +72,12 @@ def main() -> int:
         print(f"Respuestas reales en la ventana: {len(summaries)}")
         if not summaries:
             print(
-                "\nNo hay respuestas. Revisa las fechas, el ID de tag y que"
-                " existan ejecuciones en ese periodo."
+                "\nNo hay respuestas en esta ventana."
+                "\n  1. La cadencia es SEMANAL: comprueba que la ventana cubra una"
+                "\n     semana entera. Una ventana de uno o dos dias puede no incluir"
+                "\n     ningun dia de ejecucion y devolver cero sin que nada falle."
+                "\n  2. Revisa el ID de tag."
+                "\n  3. Comprueba que existan ejecuciones en ese periodo."
             )
             return 1
 

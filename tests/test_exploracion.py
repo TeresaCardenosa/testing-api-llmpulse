@@ -12,10 +12,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from llmpulse import schema  # noqa: E402
+from llmpulse.client import LLMPulseError  # noqa: E402
 from llmpulse.config import load_env, set_env_value  # noqa: E402
 from llmpulse.sampling import (  # noqa: E402
     choose_prompts,
     fetch_details,
+    parse_num_prompts,
     prompts_in_collection,
     write_flat_csv,
 )
@@ -75,6 +77,35 @@ class PromptSelectionTests(unittest.TestCase):
         """Con 4 prompts pedidos y 4 disponibles, entran los 4."""
         summaries = [{"id": i, "prompt_id": 500 + (i % 4)} for i in range(40)]
         self.assertEqual(len(choose_prompts(summaries, 4)), 4)
+
+    def test_all_prompts_mode(self):
+        """Modo del NAR definitivo: sin recorte, entran todos los prompts."""
+        summaries = [{"id": i, "prompt_id": 500 + (i % 12)} for i in range(60)]
+        self.assertEqual(len(choose_prompts(summaries, None)), 12)
+        self.assertEqual(len(choose_prompts(summaries, 4)), 4)
+
+
+class NumPromptsTests(unittest.TestCase):
+    """LLMPULSE_NUM_PROMPTS acepta un entero o 'all'."""
+
+    def test_default_is_four(self):
+        self.assertEqual(parse_num_prompts(None), 4)
+        self.assertEqual(parse_num_prompts(""), 4)
+        self.assertEqual(parse_num_prompts("   "), 4)
+
+    def test_all_means_no_limit(self):
+        for value in ["all", "ALL", "todos", "0", " all "]:
+            with self.subTest(value=value):
+                self.assertIsNone(parse_num_prompts(value))
+
+    def test_explicit_number(self):
+        self.assertEqual(parse_num_prompts("10"), 10)
+
+    def test_invalid_values_are_rejected(self):
+        for value in ["cuatro", "4.5", "-1"]:
+            with self.subTest(value=value):
+                with self.assertRaises(LLMPulseError):
+                    parse_num_prompts(value)
 
 
 class FetchTests(unittest.TestCase):
@@ -144,24 +175,30 @@ class SchemaReportTests(unittest.TestCase):
             "2026-10-15T12:00:00Z",
         )
 
-    def test_urls_are_reduced_to_domain(self):
-        self.assertEqual(
-            schema._safe_example("sources[].url", "https://example.org/ruta/privada"),
-            "example.org",
-        )
+    def test_urls_and_domains_are_never_published(self):
+        """Los dominios identifican al cliente y a sus competidores."""
+        for path, value in [
+            ("sources[].url", "https://example.org/ruta/privada"),
+            ("sources[].domain", "example.org"),
+            ("sources[].normalized_url", "www.example.org"),
+            ("citations[].url", "https://cliente.com"),
+            ("app_url", "https://llmpulse.ai/app/answer/1"),
+        ]:
+            with self.subTest(path=path):
+                self.assertIsNone(schema._safe_example(path, value))
 
-    def test_report_excludes_response_text(self):
+    def test_report_excludes_response_text_and_domains(self):
         client = FakeClient()
         with tempfile.TemporaryDirectory() as folder:
             details = fetch_details(
                 client, "123", [{"id": 1001}, {"id": 2002}], Path(folder), max_answers=40
             )
-        stats = schema.collect(details)
-        report = schema.render(stats, len(details), {"prompts": 2, "models": 1})
+        stats, containers = schema.collect(details)
+        report = schema.render(stats, containers, len(details), {"prompts": 2, "models": 1})
         self.assertIn("`response`", report, "el campo debe aparecer en la tabla")
         self.assertNotIn("Respuesta completa.", report, "pero nunca su contenido")
         self.assertNotIn("Titular", report)
-        self.assertIn("example.org", report)
+        self.assertNotIn("example.org", report, "ningun dominio puede salir publicado")
 
     def test_fill_rate_detects_optional_fields(self):
         details = [
@@ -169,10 +206,28 @@ class SchemaReportTests(unittest.TestCase):
             {"a": 2, "b": None},
             {"a": 3, "b": ""},
         ]
-        stats = schema.collect(details)
-        report = schema.render(stats, 3, {})
-        self.assertIn("| `a` | int | 100 % |", report)
-        self.assertIn("| `b` | str? | 33 % |", report)
+        stats, containers = schema.collect(details)
+        report = schema.render(stats, containers, 3, {})
+        self.assertIn("| `a` | int | 100 % | 3 |", report)
+        self.assertIn("| `b` | str? | 33 % | 3 |", report)
+
+    def test_nested_fill_rate_never_exceeds_100(self):
+        """Regresion: los campos anidados se median sobre el numero de
+        respuestas en vez de sobre los elementos de su lista, y daban
+        porcentajes absurdos (se vieron 1165 %)."""
+        details = [
+            {"sources": [{"position": i, "flag": None} for i in range(35)]},
+            {"sources": [{"position": 1, "flag": True}]},
+        ]
+        stats, containers = schema.collect(details)
+        self.assertEqual(containers["sources[]"], 36, "36 elementos en 2 respuestas")
+        report = schema.render(stats, containers, len(details), {})
+        self.assertIn("| `sources[].position` | int | 100 % | 36 |", report)
+        self.assertIn("| `sources[].flag` | bool? | 3 % | 36 |", report)
+        for line in report.splitlines():
+            if line.startswith("| `"):
+                pct = int(line.split("|")[3].strip().rstrip(" %"))
+                self.assertLessEqual(pct, 100, f"relleno imposible en: {line}")
 
 
 class EnvFileTests(unittest.TestCase):

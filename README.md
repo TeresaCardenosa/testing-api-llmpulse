@@ -80,8 +80,49 @@ Por eso el paso 5:
 `LLMPULSE_MAX_ANSWERS` es solo una red de seguridad para no descargar de más, no el criterio de
 selección.
 
-El paso 3 te dice de antemano cuántas respuestas esperar: 4 prompts × número de modelos del
-proyecto, multiplicado por los días que cubra la ventana.
+Son **dos topes independientes** y conviene ajustar los dos. `NUM_PROMPTS` recorta *antes* de
+descargar, descartando prompts enteros; `MAX_ANSWERS` corta *durante* la descarga, pase lo que
+pase. Ejemplo real: un tag con 11 prompts y un proyecto con 5 modelos daría 55 respuestas por
+ejecución. Con `NUM_PROMPTS=4` bajan a 20. Y conviene poner además `MAX_ANSWERS=20`, porque si
+algún prompt se ejecutó dos veces dentro de la ventana saldrían 40 sin que nada lo advierta.
+
+### Prueba exploratoria frente al NAR definitivo
+
+El recorte a 4 prompts existe **solo para esta exploración**: permite ver el esquema completo con
+pocas llamadas a la API. **El NAR definitivo analiza todos los prompts del tag**, no una muestra.
+
+Para ese modo no hay que tocar código, basta con `.env`:
+
+```
+LLMPULSE_NUM_PROMPTS=all
+LLMPULSE_MAX_ANSWERS=5000
+```
+
+Con `all` (o `0`) no se recorta nada: se descargan las respuestas de todos los prompts que
+aparezcan en la ventana. Hay que subir `LLMPULSE_MAX_ANSWERS` en consecuencia, porque si no el
+tope de seguridad corta la descarga a mitad.
+
+El resto del flujo es idéntico, caché incluida: lo ya descargado no se vuelve a pedir, así que
+pasar de la muestra a la extracción completa solo cuesta las respuestas nuevas.
+
+El paso 3 te dice cuántos modelos con datos tiene el proyecto, que es lo que determina el tamaño
+de la muestra: `LLMPULSE_NUM_PROMPTS` × número de modelos × número de ejecuciones que caigan
+dentro de la ventana.
+
+### La cadencia es semanal: la ventana tiene que cubrir una semana entera
+
+**LLM Pulse no lanza los prompts a diario, sino una vez por semana** (al parecer los domingos;
+conviene confirmarlo mirando el campo `executed_at` de la muestra descargada).
+
+La consecuencia es contraintuitiva y conviene no tropezar con ella: **una ventana de uno o dos
+días puede devolver cero respuestas**, no porque haya un error de configuración, sino porque
+ningún día de la ventana coincide con el de ejecución. Si el paso 5 dice que no hay respuestas,
+lo primero que hay que descartar es esto, antes que el tag o la clave.
+
+Por eso la ventana de ejemplo cubre siete días completos (lunes a domingo). Para una muestra
+limpia conviene **una sola semana**: así hay una única ejecución por prompt y modelo, y la
+comparación entre modelos no se mezcla con la evolución temporal. Ampliar la ventana a varias
+semanas multiplica la muestra por el número de domingos que contenga.
 
 ### Por qué hay dos llamadas por respuesta
 
@@ -156,10 +197,13 @@ que el informe de esquema **no filtre texto de respuestas ni nombres de cliente*
   checkpoints persistentes.
 - **Las fechas significan cosas distintas según el endpoint**: en `/answers` se refieren a cuándo
   se generó la respuesta; en `/dimensions/prompts`, a cuándo se creó el prompt.
-- La pertenencia de un prompt a un tag se expone de dos formas (`collection_ids` y `tags`) y
-  según el endpoint puede venir vacía. El paso 4 avisa si ocurre; el paso 5 funciona igualmente
-  porque filtra `/answers` por `collection_id`.
+- La pertenencia de un prompt a un tag se expone de dos formas (`collection_ids` y `tags`). En el
+  proyecto con el que se probó **sí viene rellena**, así que `/dimensions/prompts` basta para
+  saber qué prompts lleva cada tag. El paso 4 avisa si alguna vez no fuera así; el paso 5
+  funcionaría igualmente, porque filtra `/answers` por `collection_id`.
 - Un prompt puede tener más de un tag.
+- **Por convención del equipo, un tag nunca está vacío**: si un tag no devuelve prompts, es una
+  señal de que algo va mal en la configuración del proyecto, no un caso normal a gestionar.
 - La documentación oficial no se pudo verificar desde la red de Havas (mismo problema de
   certificado). Los endpoints usados aquí están comprobados contra la API real, pero puede haber
   parámetros adicionales sin documentar en este README.

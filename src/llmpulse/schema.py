@@ -24,6 +24,10 @@ SENSITIVE_HINTS = (
     "response", "text", "content", "answer", "body", "snippet", "summary",
     "description", "title", "name", "brand", "company", "client", "prompt",
     "email", "author", "query", "keyword",
+    # Los dominios identifican al cliente y a sus competidores vigilados.
+    # Para un repositorio publico eso es informacion comercial confidencial,
+    # asi que tampoco se publican, ni siquiera reducidos a host.
+    "url", "domain", "host", "merchant",
 )
 
 #: Campos tecnicos cuyo valor corto si es seguro mostrar.
@@ -65,13 +69,10 @@ def _safe_example(path: str, value: object) -> str | None:
     if not isinstance(value, str) or not value:
         return None
     name = _leaf_name(path)
-    # Las URL se reducen al dominio: util para el NAR, sin la ruta concreta.
-    if "url" in name or value.startswith(("http://", "https://")):
-        if "//" in value:
-            return value.split("//", 1)[1].split("/", 1)[0]
-        return None
     if any(hint in name for hint in SENSITIVE_HINTS):
         return None
+    if value.startswith(("http://", "https://")) or "/" in value:
+        return None  # Valor con forma de URL aunque el campo no se llame asi.
     # Fechas ISO: siempre seguras y muy informativas.
     if len(value) >= 10 and value[:4].isdigit() and value[4] == "-":
         return value[:MAX_EXAMPLE_CHARS]
@@ -102,24 +103,43 @@ class FieldStats:
             self.example = _safe_example(path, value)
 
 
-def _walk(node: object, stats: dict[str, FieldStats], prefix: str = "") -> None:
+def _parent(path: str) -> str:
+    """Contenedor en el que vive un campo: 'sources[].url' -> 'sources[]'."""
+    return path.rsplit(".", 1)[0] if "." in path else ""
+
+
+def _walk(
+    node: object,
+    stats: dict[str, FieldStats],
+    containers: dict[str, int],
+    prefix: str = "",
+) -> None:
     if isinstance(node, dict):
+        # Contar el contenedor: es el denominador del relleno de sus campos.
+        containers[prefix] = containers.get(prefix, 0) + 1
         for key, value in node.items():
             path = f"{prefix}.{key}" if prefix else key
             stats[path].observe(path, value)
-            _walk(value, stats, path)
+            _walk(value, stats, containers, path)
     elif isinstance(node, list):
         for item in node:
             if isinstance(item, (dict, list)):
-                _walk(item, stats, f"{prefix}[]")
+                _walk(item, stats, containers, f"{prefix}[]")
 
 
-def collect(details: list[dict]) -> dict[str, FieldStats]:
-    """Recorrer todas las respuestas y acumular estadisticas por campo."""
+def collect(details: list[dict]) -> tuple[dict[str, FieldStats], dict[str, int]]:
+    """Recorrer las respuestas y acumular estadisticas por campo.
+
+    Devuelve tambien cuantas veces se vio cada contenedor. Hace falta porque el
+    relleno de un campo anidado NO se mide sobre el numero de respuestas: un
+    campo dentro de sources[] puede observarse 300 veces en 20 respuestas, y
+    dividir entre 20 daria porcentajes por encima del 100 %.
+    """
     stats: dict[str, FieldStats] = defaultdict(FieldStats)
+    containers: dict[str, int] = {}
     for detail in details:
-        _walk(detail, stats)
-    return dict(stats)
+        _walk(detail, stats, containers)
+    return dict(stats), containers
 
 
 def _length_cell(stats: FieldStats) -> str:
@@ -131,7 +151,12 @@ def _length_cell(stats: FieldStats) -> str:
     return f"{low}-{high} (med. {round(mean(stats.lengths))})"
 
 
-def render(stats: dict[str, FieldStats], total: int, context: dict) -> str:
+def render(
+    stats: dict[str, FieldStats],
+    containers: dict[str, int],
+    total: int,
+    context: dict,
+) -> str:
     """Componer el markdown del informe de traspaso."""
     lines = [
         "# Esquema de las respuestas de LLM Pulse",
@@ -149,28 +174,34 @@ def render(stats: dict[str, FieldStats], total: int, context: dict) -> str:
         "",
         "## Como leer la tabla",
         "",
-        "- **Relleno**: porcentaje de respuestas donde el campo viene con valor no vacio.",
-        "  Un campo al 100 % se puede dar por garantizado; por debajo, hay que tratarlo",
-        "  como opcional en el codigo del NAR.",
+        "- **Relleno**: porcentaje de veces que el campo viene con valor no vacio,",
+        "  medido sobre la **base** indicada en la columna siguiente. Un campo al 100 %",
+        "  se puede dar por garantizado; por debajo, hay que tratarlo como opcional.",
+        "- **Base**: cuantas veces podia aparecer el campo. Para los de primer nivel es el",
+        "  numero de respuestas. Para los anidados es el numero de elementos de la lista que",
+        f"  los contiene: `sources[].url` se mide sobre todas las fuentes de las {total}",
+        "  respuestas, no sobre las respuestas.",
         "- **Longitud**: numero de caracteres para cadenas, numero de elementos para listas.",
-        "- **Ejemplo**: solo para campos tecnicos. Las URL aparecen reducidas al dominio.",
-        "  Un guion significa que el campo se omite por confidencialidad, no que este vacio.",
+        "- **Ejemplo**: solo para campos tecnicos (ids, fechas, numeros, modelos). Un guion",
+        "  significa que se omite por confidencialidad, no que este vacio. **Las URL y los",
+        "  dominios no se publican**: identifican al cliente y a sus competidores.",
         "- `sources[].url` se lee: campo `url` dentro de cada elemento de la lista `sources`.",
         "",
         "## Campos",
         "",
-        "| Campo | Tipo | Relleno | Longitud | Ejemplo |",
-        "| --- | --- | ---: | --- | --- |",
+        "| Campo | Tipo | Relleno | Base | Longitud | Ejemplo |",
+        "| --- | --- | ---: | ---: | --- | --- |",
     ]
     for path in sorted(stats):
         item = stats[path]
         types = "/".join(sorted(t for t in item.types if t != "null")) or "null"
         if "null" in item.types and types != "null":
             types += "?"
-        pct = round(100 * item.filled / total) if total else 0
+        base = containers.get(_parent(path)) or total
+        pct = round(100 * item.filled / base) if base else 0
         example = (item.example or "-").replace("|", "\\|")
         lines.append(
-            f"| `{path}` | {types} | {pct} % | {_length_cell(item)} | {example} |"
+            f"| `{path}` | {types} | {pct} % | {base} | {_length_cell(item)} | {example} |"
         )
     lines += [
         "",
@@ -187,6 +218,9 @@ def render(stats: dict[str, FieldStats], total: int, context: dict) -> str:
         "  varios modelos: ahi es donde se compara la narrativa.",
         "- **Ojo con las fechas**: los filtros de `/answers` se refieren a cuando se",
         "  genero la respuesta; los de `/dimensions/prompts`, a cuando se creo el prompt.",
+        "- **La cadencia de ejecucion es semanal**, no diaria. Mira la distribucion de",
+        "  `executed_at` en la muestra para confirmar en que dia cae. Cualquier ventana",
+        "  temporal mas corta que una semana puede devolver cero respuestas.",
         "",
     ]
     return "\n".join(lines)

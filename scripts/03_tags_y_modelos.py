@@ -1,7 +1,7 @@
 """Paso 3: ver los tags y los modelos con datos del proyecto, y elegir tag.
 
-Este paso confirma la aritmetica del experimento: cuantas respuestas vas a
-obtener por cada prompt depende de cuantos modelos tenga el proyecto.
+Los modelos que salen aqui son los que tienen respuestas en el proyecto, no
+todos los que soporta LLM Pulse.
 
     py scripts/03_tags_y_modelos.py       -> lista tags y modelos
     py scripts/03_tags_y_modelos.py 7     -> ademas fija LLMPULSE_COLLECTION_ID
@@ -35,14 +35,6 @@ def main(argv: list[str]) -> int:
 
     print(f"Proyecto: {project.get('name', '-')} (ID {project.get('id', project_id)})")
     print(f"\nMODELOS CON DATOS ({len(models)}): {', '.join(map(str, models)) or '(ninguno)'}")
-
-    num_prompts = int(os.environ.get("LLMPULSE_NUM_PROMPTS", "4") or 4)
-    if models:
-        print(
-            f"\n  Aritmetica del experimento: {num_prompts} prompts x {len(models)} modelos"
-            f" = ~{num_prompts * len(models)} respuestas por ejecucion diaria del prompt."
-        )
-        print("  Si la ventana temporal cubre varios dias, habra mas de una por combinacion.")
 
     print("\nTAGS / COLLECTIONS:")
     table(collections, ("id", "name"), (10, 60))
