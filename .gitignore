@@ -1,0 +1,22 @@
+# Respuestas reales y datos de clientes: NUNCA se versionan
+data/
+llmpulse_output/
+*.jsonl
+
+# Credenciales
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Configuracion local de herramientas
+.claude/
