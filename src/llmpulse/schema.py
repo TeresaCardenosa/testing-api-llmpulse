@@ -37,6 +37,9 @@ SAFE_HINTS = (
     "index", "order", "version", "provider", "engine", "region",
 )
 
+#: Campos que pasarian el filtro por su nombre pero no aportan nada publicado.
+NEVER_SHOW = ("request_id",)
+
 MAX_EXAMPLE_CHARS = 48
 
 
@@ -64,11 +67,17 @@ def _leaf_name(path: str) -> str:
 
 def _safe_example(path: str, value: object) -> str | None:
     """Devolver un ejemplo publicable, o None si el campo no es seguro."""
+    name = _leaf_name(path)
+    if name in NEVER_SHOW:
+        return None
+    # Identificadores internos: no aportan nada al diseno del NAR (basta saber
+    # que son enteros) y son trazables contra la cuenta de origen.
+    if name == "id" or name.endswith("_id"):
+        return None
     if isinstance(value, bool) or isinstance(value, (int, float)):
         return str(value)
     if not isinstance(value, str) or not value:
         return None
-    name = _leaf_name(path)
     if any(hint in name for hint in SENSITIVE_HINTS):
         return None
     if value.startswith(("http://", "https://")) or "/" in value:
@@ -182,9 +191,11 @@ def render(
         f"  los contiene: `sources[].url` se mide sobre todas las fuentes de las {total}",
         "  respuestas, no sobre las respuestas.",
         "- **Longitud**: numero de caracteres para cadenas, numero de elementos para listas.",
-        "- **Ejemplo**: solo para campos tecnicos (ids, fechas, numeros, modelos). Un guion",
-        "  significa que se omite por confidencialidad, no que este vacio. **Las URL y los",
-        "  dominios no se publican**: identifican al cliente y a sus competidores.",
+        "- **Ejemplo**: solo para campos tecnicos sin rastro de origen (fechas, numeros,",
+        "  booleanos, nombres de modelo). Un guion significa que se omite, no que este",
+        "  vacio. **No se publican** ni textos, ni nombres, ni URL o dominios (identifican",
+        "  al cliente y a sus competidores), ni identificadores internos (son trazables",
+        "  contra la cuenta de origen). Para verlos, consulta `data/` en local.",
         "- `sources[].url` se lee: campo `url` dentro de cada elemento de la lista `sources`.",
         "",
         "## Campos",
@@ -218,9 +229,9 @@ def render(
         "  varios modelos: ahi es donde se compara la narrativa.",
         "- **Ojo con las fechas**: los filtros de `/answers` se refieren a cuando se",
         "  genero la respuesta; los de `/dimensions/prompts`, a cuando se creo el prompt.",
-        "- **La cadencia de ejecucion es semanal**, no diaria. Mira la distribucion de",
-        "  `executed_at` en la muestra para confirmar en que dia cae. Cualquier ventana",
-        "  temporal mas corta que una semana puede devolver cero respuestas.",
+        "- **La cadencia de ejecucion es semanal**, en la madrugada del lunes, no diaria.",
+        "  Cualquier ventana temporal mas corta que una semana puede devolver cero",
+        "  respuestas sin que nada falle: es el primer fallo a descartar.",
         "",
     ]
     return "\n".join(lines)

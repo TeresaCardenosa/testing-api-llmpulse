@@ -111,8 +111,9 @@ dentro de la ventana.
 
 ### La cadencia es semanal: la ventana tiene que cubrir una semana entera
 
-**LLM Pulse no lanza los prompts a diario, sino una vez por semana** (al parecer los domingos;
-conviene confirmarlo mirando el campo `executed_at` de la muestra descargada).
+**LLM Pulse no lanza los prompts a diario, sino una vez por semana, en la madrugada del lunes.**
+Confirmado por el equipo y coherente con el campo `executed_at` de la muestra, que marca el lunes
+12 de octubre a las 02:21 (+02:00).
 
 La consecuencia es contraintuitiva y conviene no tropezar con ella: **una ventana de uno o dos
 días puede devolver cero respuestas**, no porque haya un error de configuración, sino porque
@@ -122,7 +123,7 @@ lo primero que hay que descartar es esto, antes que el tag o la clave.
 Por eso la ventana de ejemplo cubre siete días completos (lunes a domingo). Para una muestra
 limpia conviene **una sola semana**: así hay una única ejecución por prompt y modelo, y la
 comparación entre modelos no se mezcla con la evolución temporal. Ampliar la ventana a varias
-semanas multiplica la muestra por el número de domingos que contenga.
+semanas multiplica la muestra por el número de lunes que contenga.
 
 ### Por qué hay dos llamadas por respuesta
 
@@ -149,8 +150,8 @@ data/interim/respuestas.csv  Tabla plana, una fila por (prompt × modelo × fech
 
 ## Redes con inspección TLS
 
-En redes corporativas que inspeccionan el tráfico HTTPS (la de Havas, entre otras), el certificado
-de `llmpulse.ai` no lo firma una autoridad pública sino el proxy de la empresa. Python lo rechaza:
+En redes corporativas que inspeccionan el tráfico HTTPS, el certificado de `llmpulse.ai` no lo
+firma una autoridad pública sino el proxy de la empresa. Python lo rechaza:
 
 ```
 [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate signature failure
@@ -204,7 +205,7 @@ que el informe de esquema **no filtre texto de respuestas ni nombres de cliente*
 - Un prompt puede tener más de un tag.
 - **Por convención del equipo, un tag nunca está vacío**: si un tag no devuelve prompts, es una
   señal de que algo va mal en la configuración del proyecto, no un caso normal a gestionar.
-- La documentación oficial no se pudo verificar desde la red de Havas (mismo problema de
+- La documentación oficial no se pudo consultar desde la red corporativa (mismo problema de
   certificado). Los endpoints usados aquí están comprobados contra la API real, pero puede haber
   parámetros adicionales sin documentar en este README.
 

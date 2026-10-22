@@ -63,7 +63,7 @@ def _tls_hint(exc: Exception) -> str:
     if "CERTIFICATE_VERIFY_FAILED" in text or "certificate" in text.lower():
         return (
             "\n  La verificacion del certificado ha fallado. Si estas en una red"
-            " con inspeccion TLS (p. ej. Havas), instala truststore:"
+            " corporativa con inspeccion TLS, instala truststore:"
             "\n    py -m pip install -r requirements.txt"
         )
     return ""

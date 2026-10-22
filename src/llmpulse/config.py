@@ -4,9 +4,9 @@ Importar este modulo tiene dos efectos, en este orden:
 
 1. Habilita la verificacion TLS contra el almacen de certificados del sistema,
    si `truststore` esta instalado. Hace falta en redes con inspeccion TLS
-   (la de Havas intercepta llmpulse.ai y firma con una autoridad privada que
-   OpenSSL no conoce). Si no esta instalado no pasa nada: fuera de esas redes
-   la verificacion normal funciona.
+   (el proxy corporativo intercepta llmpulse.ai y firma con una autoridad
+   privada que OpenSSL no conoce). Si no esta instalado no pasa nada: fuera de
+   esas redes la verificacion normal funciona.
 2. Vuelca las variables de `.env` al entorno del proceso, sin pisar las que ya
    vengan definidas desde fuera.
 

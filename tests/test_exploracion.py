@@ -169,11 +169,29 @@ class SchemaReportTests(unittest.TestCase):
 
     def test_technical_fields_keep_an_example(self):
         self.assertEqual(schema._safe_example("model", "chatgpt"), "chatgpt")
-        self.assertEqual(schema._safe_example("id", 1001), "1001")
+        self.assertEqual(schema._safe_example("position", 3), "3")
+        self.assertEqual(schema._safe_example("score", 0.5), "0.5")
+        self.assertEqual(schema._safe_example("is_owned", False), "False")
         self.assertEqual(
             schema._safe_example("executed_at", "2026-10-15T12:00:00Z"),
             "2026-10-15T12:00:00Z",
         )
+
+    def test_internal_ids_are_never_published(self):
+        """Son trazables contra la cuenta de origen y no aportan al NAR.
+
+        Los valores de abajo son inventados a proposito: este fichero se
+        versiona, asi que no puede llevar identificadores reales.
+        """
+        for path, value in [
+            ("id", 1001),
+            ("prompt_id", 2002),
+            ("sources[].id", 3003),
+            ("competitor_citations[].competitor_id", 4004),
+            ("request_id", "00000000-0000-0000-0000-000000000000"),
+        ]:
+            with self.subTest(path=path):
+                self.assertIsNone(schema._safe_example(path, value))
 
     def test_urls_and_domains_are_never_published(self):
         """Los dominios identifican al cliente y a sus competidores."""

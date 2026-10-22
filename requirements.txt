@@ -1,7 +1,7 @@
 # OPCIONAL. El repositorio funciona solo con la biblioteca estandar de Python 3.10+.
 #
-# truststore solo hace falta en redes con inspeccion TLS corporativa (p. ej. Havas),
-# donde el certificado de llmpulse.ai lo firma una autoridad privada que esta en el
+# truststore solo hace falta en redes con inspeccion TLS corporativa, donde el
+# certificado de llmpulse.ai lo firma una autoridad privada que esta en el
 # almacen de Windows pero no en el de OpenSSL. Sintoma sin el:
 #   [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate signature failure
 #
